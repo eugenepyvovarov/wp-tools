@@ -35,7 +35,7 @@ $protocol = (!empty($_SERVER['HTTPS'])) ? 'https' : 'http';
 $callback = $protocol . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
 
 // Instantiate the Encrypter and storage objects
-$encrypter = new \Dropbox\OAuth\Storage\Encrypter('XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX');
+$encrypter = new \Dropbox\OAuth\Storage\Encrypter('YXNrbGpkaGFza2xkaGFrbHNkaGFrbHNq');
 $storage = new \Dropbox\OAuth\Storage\Session($encrypter);
 
 // Instantiate the persistent data store and connect
@@ -46,3 +46,4 @@ $storage = new \Dropbox\OAuth\Storage\Session($encrypter);
 
 $OAuth = new \Dropbox\OAuth\Consumer\Curl($key, $secret, $storage, $callback);
 $dropbox = new \Dropbox\API($OAuth);
+//uid=97026691&oauth_token=eyd3xs86wlar6by

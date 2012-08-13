@@ -4,7 +4,7 @@
  * @author Arashi
  * @copyright 2012
  */
-
+require_once('config.php');
 class Backupster{
 
     private $_project_name = '';
@@ -15,6 +15,8 @@ class Backupster{
     private $_ftp_folder = '';
     private $_ftp_port = '';
     private $_ftp_connection = '';
+    
+    private $_ftp_files = array();
     
     private $_db_user = '';
     private $_db_password = '';
@@ -28,6 +30,7 @@ class Backupster{
 
     public function __construct($project_name = '', $ftp_server = '', $ftp_folder = '', $ftp_user = '', $ftp_password = '', $db_host = '', $db_name = '', $db_user = '', $db_password = '', $backup_folder = '')
     {
+        global $backup_config;
         $this->_project_name = $project_name;
 
         $this->_ftp_user = $ftp_user;
@@ -42,7 +45,12 @@ class Backupster{
         $this->_db_name = $db_name;
         
         if($backup_folder)
-            $this->$_backup_folder = $backup_folder;
+            $this->_backup_folder = $backup_folder;
+        if (!$ftp_server && !$ftp_user && !$db_host && !$db_user) {
+            foreach ($backup_config as $var => $value) {
+                $this->$var = $value;
+            }
+        }
         
         $this->_set_strings();
     }
@@ -155,6 +163,61 @@ class Backupster{
       mysql_close($link);
     }
     
+    public function read_ftp()
+    {
+        global $config;
+        if($this->_ftp_connection = ftp_connect($this->_ftp_server, $this->_ftp_port)){
+            $ftp_login  = ftp_login($this->_ftp_connection, $this->_ftp_user, $this->_ftp_password);
+            ftp_pasv($this->_ftp_connection, true);
+            
+            if (!$link = mysql_connect($config['mysql_host'],$config['mysql_user'],$config['mysql_password'])) {
+                $this->_error = 'Invalid db credentials';
+                return;
+              }
+            mysql_select_db($config['mysql_database'],$link);
+            
+            
+            $this->_read($this->_ftp_folder);
+            ftp_close($this->_ftp_connection);
+            var_dump($this->_ftp_files);
+            foreach ($this->_ftp_files as $file) {
+                $result = mysql_query("INSERT INTO `backupster`.`jobs` (`id` ,`status`,`file`) VALUES (NULL , 'new', '$file');", $link);
+            }
+            
+            mysql_close($link);
+        }else{
+            $this->_error = 'Can\'t connect to ftp server';
+            return;
+        } 
+    }
+   
+    private function _read($remote_dir = ".")
+    {
+	    if ($remote_dir != ".") {
+	        if (ftp_chdir($this->_ftp_connection, $remote_dir) == false) {
+	            $this->_error = "Change Dir Failed: $remote_dir<br />\r\n";
+	            return;
+	        }
+	    }
+         
+	    $contents = ftp_nlist($this->_ftp_connection, ".");
+	    foreach ($contents as $file) {
+        
+	        if ($file == '.' || $file == '..')
+	            continue;
+ 
+	        if (@ftp_chdir($this->_ftp_connection, $remote_dir.'/'.$file)) {
+	            ftp_chdir ($this->_ftp_connection, "..");
+	            $this->_read($remote_dir.'/'.$file);
+	        }
+	        else{
+                $this->_ftp_files[] = $remote_dir.'/'.$file;
+                //$result = mysql_query('INSERT IGNORE INTO `jobs` (`file`) VALUES ('.mysql_real_escape_string($remote_dir.'/'.$file, $link).');', $link);
+            }
+        }
+	    ftp_chdir ($this->_ftp_connection, "..");
+	}
+    
     public function backup_files()
     {
         if($this->_ftp_connection = ftp_connect($this->_ftp_server, $this->_ftp_port)){
@@ -252,28 +315,62 @@ class Backupster{
         unlink($this->_backup_folder.'.zip');
     }
     
-    public function run()
+    public function upload($archived)
     {
-        if ((strlen($this->_db_host) < 2) && (strlen($this->_db_user) < 2) && (strlen($this->_db_name) < 2)) {
-            $this->_error = 'Database credentials incorrect';
-            return;
-        }
-        if ((strlen($this->_ftp_server) < 2) && (strlen($this->_ftp_user) < 2)) {
-            $this->_error = 'Database credentials incorrect';
-            return;
-        }
-        $this->backup_tables();
-        $this->backup_files();
-        
-        $this->_zip($this->_backup_folder, $this->_backup_folder.'.zip');
-        // Upload the file with an alternative filename
         require_once('./lib/dropbox/bootstrap.php');
-        if(filesize($this->_backup_folder.'.zip') <= 157286400)
-            $put = $dropbox->putFile($this->_backup_folder.'.zip');
-        else
-            $put = $dropbox->chunkedUpload($this->_backup_folder.'.zip');
+        if ($archived) {
+            if(filesize($this->_backup_folder.'.zip') <= 157286400)
+                $resp = $dropbox->putFile(realpath($this->_backup_folder.'.zip'),false,'/backups/');
+            else
+                $resp = $dropbox->chunkedUpload(realpath($this->_backup_folder.'.zip'), false, '/backups/'); 
+        }else{
+            if (is_dir($this->_backup_folder) === true)
+            {
+                $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($this->_backup_folder), RecursiveIteratorIterator::SELF_FIRST);
+                $parent_folder = str_replace('\\', '/', realpath($this->_backup_folder));
+                //var_dump($parent_folder);
+                foreach ($files as $file)
+                {
+                    $file = str_replace('\\', '/', realpath($file));
+
+                    if (is_dir($file) === true)
+                    {
+                        //$resp = $dropbox->create($this->_backup_folder . str_replace($parent_folder, '', $file . '/'));
+                        //var_dump($this->_backup_folder . str_replace($parent_folder, '', $file . '/'));
+                        //$zip->addEmptyDir(str_replace($this->_backup_folder . '/', '', $file . '/'));
+                    }
+                    else if (is_file($file) === true)
+                    {
+                        $resp = $dropbox->putFile($file, false, $this->_backup_folder . str_replace($parent_folder, '', dirname($file)));
+                        //$zip->addFromString(str_replace($this->_backup_folder . '/', '', $file), file_get_contents($file));
+                    }
+                }
+            }
+        }
+        return $resp;
+
+    }
+    
+    public function run($archived = true)
+    {
+//        if ((strlen($this->_db_host) < 2) && (strlen($this->_db_user) < 2) && (strlen($this->_db_name) < 2)) {
+//            $this->_error = 'Database credentials incorrect';
+//            return;
+//        }
+//        if ((strlen($this->_ftp_server) < 2) && (strlen($this->_ftp_user) < 2)) {
+//            $this->_error = 'Database credentials incorrect';
+//            return;
+//        }
+//        $this->backup_tables();
+//        $this->backup_files();
+
+//        $this->read_ftp();
+//        if($archived)
+//            $this->_zip($this->_backup_folder, $this->_backup_folder.'.zip');
+        // Upload the file with an alternative filename
+        //$resp = $this->upload($archived);
         // Dump the output
-        var_dump($put);
+        //var_dump($resp);
 //        $this->cleanup();
     }
 }

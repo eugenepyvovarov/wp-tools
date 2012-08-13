@@ -10,7 +10,7 @@ ini_set( 'memory_limit', '128M' );
 include_once("backupster.php");
 //var_dump($_POST);
 if ($_POST) {
-    $bu = new Backupster($_POST['project_name'],$_POST['ftp_server'],$_POST['ftp_path'],$_POST['ftp_user'],$_POST['ftp_password'],$_POST['mysql_server'],$_POST['mysql_dbname'],$_POST['mysql_user'],$_POST['mysql_password']);
+    $bu = new Backupster($_POST['project_name'],$_POST['ftp_server'],$_POST['ftp_path'],$_POST['ftp_user'],$_POST['ftp_password'],$_POST['mysql_server'],$_POST['mysql_dbname'],$_POST['mysql_user'],$_POST['mysql_password'],'D:\xampp\htdocs\parqor');
     //$bu->backup_files();
     //var_dump($bu);
     $bu->run();
